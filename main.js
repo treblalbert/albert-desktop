@@ -1,7 +1,6 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, shell, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
 const crypto = require('crypto');
 
 // Prevent multiple instances
@@ -60,14 +59,13 @@ function setAutoStart(enable) {
   });
 }
 
-// Extract icon from file using PowerShell
-function getFileIcon(filePath, forceRefresh = false) {
-  return new Promise((resolve) => {
+// Extract icon using Electron's native app.getFileIcon
+async function getFileIcon(filePath, forceRefresh = false) {
+  try {
     // Check if file exists
     if (!fs.existsSync(filePath)) {
       console.log('File does not exist:', filePath);
-      resolve(null);
-      return;
+      return null;
     }
 
     const hash = crypto.createHash('md5').update(filePath).digest('hex');
@@ -75,8 +73,7 @@ function getFileIcon(filePath, forceRefresh = false) {
     
     // Check cache first (unless forcing refresh)
     if (!forceRefresh && fs.existsSync(cachedIconPath)) {
-      resolve(`file:///${cachedIconPath.replace(/\\/g, '/')}`);
-      return;
+      return cachedIconPath;
     }
 
     // Delete old cached icon if forcing refresh
@@ -84,50 +81,21 @@ function getFileIcon(filePath, forceRefresh = false) {
       try { fs.unlinkSync(cachedIconPath); } catch (e) {}
     }
     
-    if (process.platform === 'win32') {
-      // Escape the paths properly for PowerShell
-      const escapedFilePath = filePath.replace(/'/g, "''");
-      const escapedCachePath = cachedIconPath.replace(/'/g, "''");
-      
-      const psScript = `
-Add-Type -AssemblyName System.Drawing
-try {
-    $filePath = '${escapedFilePath}'
-    $outPath = '${escapedCachePath}'
-    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($filePath)
-    if ($icon) {
-        $bitmap = $icon.ToBitmap()
-        $bitmap.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
-        $bitmap.Dispose()
-        $icon.Dispose()
-        Write-Output 'OK'
-    } else {
-        Write-Output 'NO_ICON'
+    // Use Electron's native getFileIcon - this works great on Windows!
+    const icon = await app.getFileIcon(filePath, { size: 'large' });
+    
+    if (icon && !icon.isEmpty()) {
+      const pngBuffer = icon.toPNG();
+      fs.writeFileSync(cachedIconPath, pngBuffer);
+      console.log('Icon saved to:', cachedIconPath);
+      return cachedIconPath;
     }
-} catch {
-    Write-Output "ERROR: $_"
-}
-`;
-      
-      // Write script to temp file to avoid command line escaping issues
-      const tempScriptPath = path.join(iconCachePath, `extract_${hash}.ps1`);
-      fs.writeFileSync(tempScriptPath, psScript);
-      
-      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { timeout: 10000 }, (error, stdout, stderr) => {
-        // Clean up temp script
-        try { fs.unlinkSync(tempScriptPath); } catch (e) {}
-        
-        if (!error && fs.existsSync(cachedIconPath)) {
-          resolve(`file:///${cachedIconPath.replace(/\\/g, '/')}`);
-        } else {
-          console.log('Icon extraction failed for:', filePath, stdout, stderr);
-          resolve(null);
-        }
-      });
-    } else {
-      resolve(null);
-    }
-  });
+    
+    return null;
+  } catch (e) {
+    console.error('Error extracting icon for', filePath, e);
+    return null;
+  }
 }
 
 // Clear icon cache for a specific file
@@ -163,12 +131,20 @@ function createWindow() {
     visualEffectState: 'active',
     webPreferences: {
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false  // Allow loading local file:// images
     }
   });
 
   mainWindow.setOpacity(config.opacity);
   mainWindow.loadFile('index.html');
+  
+  // Open DevTools with F12 for debugging
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
   
   isExpanded = !config.collapsed;
 
@@ -237,6 +213,10 @@ function createTray() {
     {
       label: 'Open Data Folder',
       click: () => shell.openPath(userDataPath)
+    },
+    {
+      label: 'Open DevTools (Debug)',
+      click: () => mainWindow.webContents.openDevTools()
     },
     {
       label: 'Reload All Icons',

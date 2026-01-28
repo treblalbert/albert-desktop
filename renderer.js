@@ -69,17 +69,19 @@ async function reloadSingleIcon(index) {
   
   const shortcut = tab.shortcuts[index];
   
-  // Clear the cached icon
-  await ipcRenderer.invoke('clear-single-icon-cache', shortcut.path);
+  // Clear the cached icon path from data
   delete shortcut.iconPath;
-  await saveData();
+  
+  // Clear the cached icon file
+  await ipcRenderer.invoke('clear-single-icon-cache', shortcut.path);
   
   // Force re-extract
-  const iconUrl = await ipcRenderer.invoke('extract-icon', shortcut.path, true);
-  if (iconUrl) {
-    shortcut.iconPath = iconUrl;
-    await saveData();
+  const iconPath = await ipcRenderer.invoke('extract-icon', shortcut.path, true);
+  if (iconPath) {
+    shortcut.iconPath = iconPath;
   }
+  
+  await saveData();
   
   // Re-render
   await renderShortcuts();
@@ -191,6 +193,7 @@ function bindAddBtn() {
 
 async function getIconHtml(shortcut, index) {
   const filePath = shortcut.path;
+  console.log(`Getting icon for: ${filePath}`);
   
   // URL - use globe icon
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
@@ -199,35 +202,47 @@ async function getIconHtml(shortcut, index) {
   
   // Check if it's a folder (no extension or ends with slash)
   const ext = path.extname(filePath).toLowerCase();
-  if (!ext || filePath.endsWith('/') || filePath.endsWith('\\')) {
+  const isFolder = !ext || filePath.endsWith('/') || filePath.endsWith('\\');
+  
+  // For folders, try to get the folder icon, otherwise use SVG
+  if (isFolder) {
+    try {
+      const iconPath = await ipcRenderer.invoke('extract-icon', filePath, false);
+      console.log(`Folder icon path: ${iconPath}`);
+      if (iconPath) {
+        return `<img src="file:///${iconPath.replace(/\\/g, '/')}" draggable="false" style="width:32px;height:32px;" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none">${icons.folder}</span>`;
+      }
+    } catch (e) {
+      console.error('Folder icon error:', e);
+    }
     return icons.folder;
   }
   
-  // Check if we have a cached icon URL
-  if (shortcut.iconPath) {
-    // Add cache buster to force reload
-    const cacheBuster = Date.now();
-    return `<img src="${shortcut.iconPath}?t=${cacheBuster}" onerror="this.parentElement.innerHTML='${icons.file.replace(/'/g, "\\'")}'" style="width:32px;height:32px;">`;
+  // Check if we have a cached icon path
+  if (shortcut.iconPath && shortcut.iconPath.length > 0) {
+    console.log(`Using cached icon: ${shortcut.iconPath}`);
+    const imgSrc = shortcut.iconPath.startsWith('file://') ? shortcut.iconPath : `file:///${shortcut.iconPath.replace(/\\/g, '/')}`;
+    return `<img src="${imgSrc}" draggable="false" style="width:32px;height:32px;" onerror="console.error('Image load failed:', this.src);this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none">${icons.file}</span>`;
   }
   
-  // Try to extract icon for executable files
-  const extractableExts = ['.exe', '.lnk', '.dll', '.ico', '.msi'];
-  if (extractableExts.includes(ext)) {
-    try {
-      const iconUrl = await ipcRenderer.invoke('extract-icon', filePath, false);
-      if (iconUrl) {
-        // Cache the icon path in the shortcut data
-        const tab = data.tabs.find(t => t.id === data.activeTab);
-        if (tab && tab.shortcuts[index]) {
-          tab.shortcuts[index].iconPath = iconUrl;
-          saveData(); // Save without await to not block rendering
-        }
-        const cacheBuster = Date.now();
-        return `<img src="${iconUrl}?t=${cacheBuster}" onerror="this.parentElement.innerHTML='${icons.file.replace(/'/g, "\\'")}'" style="width:32px;height:32px;">`;
+  // Try to extract icon
+  try {
+    console.log(`Extracting icon for: ${filePath}`);
+    const iconPath = await ipcRenderer.invoke('extract-icon', filePath, false);
+    console.log(`Extracted icon path: ${iconPath}`);
+    if (iconPath) {
+      // Cache the icon path in the shortcut data
+      const tab = data.tabs.find(t => t.id === data.activeTab);
+      if (tab && tab.shortcuts[index]) {
+        tab.shortcuts[index].iconPath = iconPath;
+        saveData();
       }
-    } catch (e) {
-      console.error('Error extracting icon:', e);
+      const imgSrc = `file:///${iconPath.replace(/\\/g, '/')}`;
+      console.log(`Image src: ${imgSrc}`);
+      return `<img src="${imgSrc}" draggable="false" style="width:32px;height:32px;" onerror="console.error('Image load failed:', this.src);this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none">${icons.file}</span>`;
     }
+  } catch (e) {
+    console.error('Error getting icon:', e);
   }
   
   // Default file icon
@@ -438,6 +453,13 @@ function setupDragDrop() {
 
 // Events
 function setupEvents() {
+  // Reload all icons button
+  document.getElementById('reloadBtn').addEventListener('click', async () => {
+    console.log('Reload button clicked');
+    await ipcRenderer.invoke('clear-all-icon-cache');
+    await reloadAllIcons();
+  });
+  
   // Collapse
   collapseBtn.addEventListener('click', async () => {
     const isExpanded = await ipcRenderer.invoke('toggle-expand');
