@@ -60,38 +60,67 @@ function setAutoStart(enable) {
   });
 }
 
-// Extract icon from exe using PowerShell
-function extractIcon(filePath) {
+// Extract icon from file using PowerShell
+function getFileIcon(filePath, forceRefresh = false) {
   return new Promise((resolve) => {
-    const ext = path.extname(filePath).toLowerCase();
-    
-    // Generate cache filename based on file path hash
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.log('File does not exist:', filePath);
+      resolve(null);
+      return;
+    }
+
     const hash = crypto.createHash('md5').update(filePath).digest('hex');
     const cachedIconPath = path.join(iconCachePath, `${hash}.png`);
     
-    // Check cache first
-    if (fs.existsSync(cachedIconPath)) {
-      resolve(`file://${cachedIconPath.replace(/\\/g, '/')}`);
+    // Check cache first (unless forcing refresh)
+    if (!forceRefresh && fs.existsSync(cachedIconPath)) {
+      resolve(`file:///${cachedIconPath.replace(/\\/g, '/')}`);
       return;
     }
+
+    // Delete old cached icon if forcing refresh
+    if (forceRefresh && fs.existsSync(cachedIconPath)) {
+      try { fs.unlinkSync(cachedIconPath); } catch (e) {}
+    }
     
-    // Only extract for exe, lnk, etc on Windows
-    if (process.platform === 'win32' && ['.exe', '.lnk', '.dll'].includes(ext)) {
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("${filePath.replace(/\\/g, '\\\\')}")
-        if ($icon) {
-          $bitmap = $icon.ToBitmap()
-          $bitmap.Save("${cachedIconPath.replace(/\\/g, '\\\\')}", [System.Drawing.Imaging.ImageFormat]::Png)
-          $bitmap.Dispose()
-          $icon.Dispose()
-        }
-      `;
+    if (process.platform === 'win32') {
+      // Escape the paths properly for PowerShell
+      const escapedFilePath = filePath.replace(/'/g, "''");
+      const escapedCachePath = cachedIconPath.replace(/'/g, "''");
       
-      exec(`powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, (error) => {
+      const psScript = `
+Add-Type -AssemblyName System.Drawing
+try {
+    $filePath = '${escapedFilePath}'
+    $outPath = '${escapedCachePath}'
+    $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($filePath)
+    if ($icon) {
+        $bitmap = $icon.ToBitmap()
+        $bitmap.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+        $bitmap.Dispose()
+        $icon.Dispose()
+        Write-Output 'OK'
+    } else {
+        Write-Output 'NO_ICON'
+    }
+} catch {
+    Write-Output "ERROR: $_"
+}
+`;
+      
+      // Write script to temp file to avoid command line escaping issues
+      const tempScriptPath = path.join(iconCachePath, `extract_${hash}.ps1`);
+      fs.writeFileSync(tempScriptPath, psScript);
+      
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`, { timeout: 10000 }, (error, stdout, stderr) => {
+        // Clean up temp script
+        try { fs.unlinkSync(tempScriptPath); } catch (e) {}
+        
         if (!error && fs.existsSync(cachedIconPath)) {
-          resolve(`file://${cachedIconPath.replace(/\\/g, '/')}`);
+          resolve(`file:///${cachedIconPath.replace(/\\/g, '/')}`);
         } else {
+          console.log('Icon extraction failed for:', filePath, stdout, stderr);
           resolve(null);
         }
       });
@@ -101,46 +130,13 @@ function extractIcon(filePath) {
   });
 }
 
-// Get icon for any file type using shell
-function getFileIcon(filePath) {
-  return new Promise((resolve) => {
-    const hash = crypto.createHash('md5').update(filePath).digest('hex');
-    const cachedIconPath = path.join(iconCachePath, `${hash}.png`);
-    
-    if (fs.existsSync(cachedIconPath)) {
-      resolve(`file://${cachedIconPath.replace(/\\/g, '/')}`);
-      return;
-    }
-    
-    if (process.platform === 'win32') {
-      // Use PowerShell to get any file's associated icon
-      const psScript = `
-        Add-Type -AssemblyName System.Drawing
-        try {
-          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon("${filePath.replace(/\\/g, '\\\\')}")
-          if ($icon) {
-            $bitmap = $icon.ToBitmap()
-            $bitmap.Save("${cachedIconPath.replace(/\\/g, '\\\\')}", [System.Drawing.Imaging.ImageFormat]::Png)
-            $bitmap.Dispose()
-            $icon.Dispose()
-            Write-Output "success"
-          }
-        } catch {
-          Write-Output "failed"
-        }
-      `;
-      
-      exec(`powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`, { timeout: 5000 }, (error, stdout) => {
-        if (!error && fs.existsSync(cachedIconPath)) {
-          resolve(`file://${cachedIconPath.replace(/\\/g, '/')}`);
-        } else {
-          resolve(null);
-        }
-      });
-    } else {
-      resolve(null);
-    }
-  });
+// Clear icon cache for a specific file
+function clearIconCache(filePath) {
+  const hash = crypto.createHash('md5').update(filePath).digest('hex');
+  const cachedIconPath = path.join(iconCachePath, `${hash}.png`);
+  if (fs.existsSync(cachedIconPath)) {
+    try { fs.unlinkSync(cachedIconPath); } catch (e) {}
+  }
 }
 
 function createWindow() {
@@ -243,6 +239,14 @@ function createTray() {
       click: () => shell.openPath(userDataPath)
     },
     {
+      label: 'Reload All Icons',
+      click: () => {
+        fs.rmSync(iconCachePath, { recursive: true, force: true });
+        fs.mkdirSync(iconCachePath, { recursive: true });
+        mainWindow.webContents.send('reload-icons');
+      }
+    },
+    {
       label: 'Clear Icon Cache',
       click: () => {
         fs.rmSync(iconCachePath, { recursive: true, force: true });
@@ -329,8 +333,19 @@ ipcMain.handle('set-opacity', (event, opacity) => {
 
 ipcMain.handle('get-config', () => loadConfig());
 
-ipcMain.handle('extract-icon', async (event, filePath) => {
-  return await getFileIcon(filePath);
+ipcMain.handle('extract-icon', async (event, filePath, forceRefresh = false) => {
+  return await getFileIcon(filePath, forceRefresh);
+});
+
+ipcMain.handle('clear-single-icon-cache', (event, filePath) => {
+  clearIconCache(filePath);
+  return true;
+});
+
+ipcMain.handle('clear-all-icon-cache', () => {
+  fs.rmSync(iconCachePath, { recursive: true, force: true });
+  fs.mkdirSync(iconCachePath, { recursive: true });
+  return true;
 });
 
 ipcMain.handle('get-icon-cache-path', () => iconCachePath);

@@ -8,7 +8,8 @@ const icons = {
   file: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>`,
   plus: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>`,
   dropFiles: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/></svg>`,
-  expand: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"/></svg>`
+  expand: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"/></svg>`,
+  refresh: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>`
 };
 
 // State
@@ -42,6 +43,47 @@ const shortcutPathInput = document.getElementById('shortcutPathInput');
 // Context Menus
 const shortcutContextMenu = document.getElementById('shortcutContextMenu');
 const tabContextMenu = document.getElementById('tabContextMenu');
+
+// Listen for reload-icons event from main process
+ipcRenderer.on('reload-icons', () => {
+  console.log('Reloading all icons...');
+  reloadAllIcons();
+});
+
+// Reload all icons (clear cached paths and re-render)
+async function reloadAllIcons() {
+  // Clear all cached iconPath from shortcuts
+  for (const tab of data.tabs) {
+    for (const shortcut of tab.shortcuts) {
+      delete shortcut.iconPath;
+    }
+  }
+  await saveData();
+  await renderShortcuts();
+}
+
+// Reload a single shortcut's icon
+async function reloadSingleIcon(index) {
+  const tab = data.tabs.find(t => t.id === data.activeTab);
+  if (!tab?.shortcuts[index]) return;
+  
+  const shortcut = tab.shortcuts[index];
+  
+  // Clear the cached icon
+  await ipcRenderer.invoke('clear-single-icon-cache', shortcut.path);
+  delete shortcut.iconPath;
+  await saveData();
+  
+  // Force re-extract
+  const iconUrl = await ipcRenderer.invoke('extract-icon', shortcut.path, true);
+  if (iconUrl) {
+    shortcut.iconPath = iconUrl;
+    await saveData();
+  }
+  
+  // Re-render
+  await renderShortcuts();
+}
 
 // Initialize
 async function init() {
@@ -111,8 +153,8 @@ async function renderShortcuts() {
     item.dataset.index = i;
     item.title = shortcut.path;
     
-    // Get icon
-    const iconHtml = await getIconHtml(shortcut);
+    // Get icon - pass index for caching
+    const iconHtml = await getIconHtml(shortcut, i);
     
     item.innerHTML = `
       <button class="shortcut-delete" data-index="${i}">&times;</button>
@@ -147,40 +189,48 @@ function bindAddBtn() {
   if (btn) btn.addEventListener('click', openNewShortcut);
 }
 
-async function getIconHtml(shortcut) {
-  // Check if we have a cached icon
-  if (shortcut.iconPath) {
-    return `<img src="${shortcut.iconPath}" onerror="this.outerHTML='${icons.file}'">`;
-  }
-  
+async function getIconHtml(shortcut, index) {
   const filePath = shortcut.path;
   
-  // URL
+  // URL - use globe icon
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     return icons.globe;
   }
   
-  // Folder
+  // Check if it's a folder (no extension or ends with slash)
   const ext = path.extname(filePath).toLowerCase();
   if (!ext || filePath.endsWith('/') || filePath.endsWith('\\')) {
     return icons.folder;
   }
   
-  // Try to extract icon
-  const iconUrl = await ipcRenderer.invoke('extract-icon', filePath);
-  if (iconUrl) {
-    // Cache the icon path
-    const tab = data.tabs.find(t => t.id === data.activeTab);
-    if (tab) {
-      const idx = tab.shortcuts.findIndex(s => s.path === filePath);
-      if (idx !== -1) {
-        tab.shortcuts[idx].iconPath = iconUrl;
-        saveData();
-      }
-    }
-    return `<img src="${iconUrl}" onerror="this.outerHTML='${icons.file}'">`;
+  // Check if we have a cached icon URL
+  if (shortcut.iconPath) {
+    // Add cache buster to force reload
+    const cacheBuster = Date.now();
+    return `<img src="${shortcut.iconPath}?t=${cacheBuster}" onerror="this.parentElement.innerHTML='${icons.file.replace(/'/g, "\\'")}'" style="width:32px;height:32px;">`;
   }
   
+  // Try to extract icon for executable files
+  const extractableExts = ['.exe', '.lnk', '.dll', '.ico', '.msi'];
+  if (extractableExts.includes(ext)) {
+    try {
+      const iconUrl = await ipcRenderer.invoke('extract-icon', filePath, false);
+      if (iconUrl) {
+        // Cache the icon path in the shortcut data
+        const tab = data.tabs.find(t => t.id === data.activeTab);
+        if (tab && tab.shortcuts[index]) {
+          tab.shortcuts[index].iconPath = iconUrl;
+          saveData(); // Save without await to not block rendering
+        }
+        const cacheBuster = Date.now();
+        return `<img src="${iconUrl}?t=${cacheBuster}" onerror="this.parentElement.innerHTML='${icons.file.replace(/'/g, "\\'")}'" style="width:32px;height:32px;">`;
+      }
+    } catch (e) {
+      console.error('Error extracting icon:', e);
+    }
+  }
+  
+  // Default file icon
   return icons.file;
 }
 
@@ -429,7 +479,7 @@ function setupEvents() {
   });
   
   // Context menu actions
-  shortcutContextMenu.addEventListener('click', e => {
+  shortcutContextMenu.addEventListener('click', async e => {
     const action = e.target.closest('.context-item')?.dataset.action;
     if (!action) return;
     
@@ -443,6 +493,9 @@ function setupEvents() {
       case 'show-in-folder':
         const shortcut = tab.shortcuts[contextShortcutIndex];
         if (shortcut) ipcRenderer.invoke('show-in-folder', shortcut.path);
+        break;
+      case 'reload-icon':
+        await reloadSingleIcon(contextShortcutIndex);
         break;
       case 'edit':
         openEditShortcut(contextShortcutIndex);
