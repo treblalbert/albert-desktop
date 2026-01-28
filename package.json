@@ -1,0 +1,34 @@
+{
+  "name": "albert-desktop",
+  "version": "1.0.0",
+  "description": "Albert's Desktop Widget",
+  "main": "main.js",
+  "author": "Albert",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable",
+    "build:installer": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.albert.desktop-widget",
+    "productName": "Albert Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "extraResources": [
+      "icons/**/*"
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "AlbertDesktop.exe"
+    }
+  }
+}

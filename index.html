@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Albert Desktop</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    :root {
+      --bg-solid: rgba(255, 255, 255, 0.78);
+      --bg-glass: rgba(255, 255, 255, 0.65);
+      --bg-hover: rgba(0, 0, 0, 0.04);
+      --bg-active: rgba(0, 0, 0, 0.08);
+      --bg-selected: rgba(0, 122, 255, 0.12);
+      --accent: #007AFF;
+      --accent-hover: #0056CC;
+      --text-primary: #1d1d1f;
+      --text-secondary: #86868b;
+      --text-tertiary: #aeaeb2;
+      --border: rgba(0, 0, 0, 0.08);
+      --border-strong: rgba(0, 0, 0, 0.12);
+      --shadow: 0 2px 20px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.1);
+      --shadow-elevated: 0 10px 40px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.1);
+      --radius: 12px;
+      --radius-lg: 16px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      background: transparent;
+      color: var(--text-primary);
+      font-size: 13px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .widget {
+      background: var(--bg-solid);
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-elevated);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Title Bar */
+    .title-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      min-height: 48px;
+    }
+
+    .title-bar h1 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+
+    .title-controls {
+      display: flex;
+      gap: 8px;
+      -webkit-app-region: no-drag;
+    }
+
+    .title-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .title-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .title-btn:active {
+      background: var(--bg-active);
+    }
+
+    .title-btn svg {
+      width: 16px;
+      height: 16px;
+      stroke-width: 1.5;
+    }
+
+    /* Main Container */
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Tabs */
+    .tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 8px 12px;
+      background: var(--bg-glass);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .tabs-bar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .tab {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .tab:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .tab.active {
+      background: var(--bg-selected);
+      color: var(--accent);
+    }
+
+    .tab-add {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-tertiary);
+    }
+
+    .tab-add:hover {
+      color: var(--accent);
+    }
+
+    /* Content Area */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      position: relative;
+    }
+
+    .content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .content::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+
+    /* Shortcuts Grid */
+    .shortcuts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+      gap: 8px;
+    }
+
+    .shortcut {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 8px;
+      border-radius: var(--radius);
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+      position: relative;
+    }
+
+    .shortcut:hover {
+      background: var(--bg-hover);
+    }
+
+    .shortcut:active {
+      background: var(--bg-active);
+      transform: scale(0.97);
+    }
+
+    .shortcut.drag-over {
+      background: var(--bg-selected);
+      border-color: var(--accent);
+    }
+
+    .shortcut-icon {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 6px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(245,245,247,0.9) 100%);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
+      overflow: hidden;
+    }
+
+    .shortcut-icon img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+    }
+
+    .shortcut-icon svg {
+      width: 24px;
+      height: 24px;
+      color: var(--text-secondary);
+    }
+
+    .shortcut-icon.folder {
+      background: linear-gradient(180deg, #6CB4EE 0%, #4A9FE8 100%);
+    }
+
+    .shortcut-icon.folder svg {
+      color: white;
+      width: 26px;
+      height: 26px;
+    }
+
+    .shortcut-icon.web {
+      background: linear-gradient(180deg, #FF6B6B 0%, #EE5A5A 100%);
+    }
+
+    .shortcut-icon.web svg {
+      color: white;
+    }
+
+    .shortcut-name {
+      font-size: 11px;
+      text-align: center;
+      color: var(--text-primary);
+      word-break: break-word;
+      line-height: 1.3;
+      max-width: 100%;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .shortcut-delete {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.5);
+      border: none;
+      color: white;
+      font-size: 12px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .shortcut:hover .shortcut-delete {
+      opacity: 1;
+    }
+
+    .shortcut-delete:hover {
+      background: #ff3b30;
+    }
+
+    /* Add Button */
+    .add-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 8px;
+      border-radius: var(--radius);
+      background: transparent;
+      border: 1.5px dashed var(--border-strong);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      min-height: 82px;
+    }
+
+    .add-btn:hover {
+      border-color: var(--accent);
+      background: var(--bg-selected);
+    }
+
+    .add-btn svg {
+      width: 24px;
+      height: 24px;
+      color: var(--text-tertiary);
+    }
+
+    .add-btn:hover svg {
+      color: var(--accent);
+    }
+
+    /* Empty State */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+      color: var(--text-secondary);
+      text-align: center;
+      grid-column: 1 / -1;
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      color: var(--text-tertiary);
+      margin-bottom: 16px;
+    }
+
+    .empty-state h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* Drop Zone */
+    .drop-zone {
+      position: absolute;
+      inset: 8px;
+      background: rgba(0, 122, 255, 0.08);
+      border: 2px dashed var(--accent);
+      border-radius: var(--radius);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .drop-zone.active {
+      display: flex;
+    }
+
+    .drop-zone span {
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--bg-solid);
+      backdrop-filter: blur(40px);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-elevated);
+      padding: 20px;
+      width: 280px;
+      max-width: 90%;
+    }
+
+    .modal h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+    }
+
+    .modal input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: rgba(255, 255, 255, 0.8);
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 12px;
+      transition: all 0.15s;
+    }
+
+    .modal input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+    }
+
+    .modal input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-active);
+    }
+
+    .btn-danger {
+      background: #ff3b30;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #d63029;
+    }
+
+    /* Context Menu */
+    .context-menu {
+      position: fixed;
+      background: var(--bg-solid);
+      backdrop-filter: blur(40px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 4px;
+      min-width: 160px;
+      z-index: 2000;
+      display: none;
+      box-shadow: var(--shadow-elevated);
+    }
+
+    .context-menu.active {
+      display: block;
+    }
+
+    .context-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .context-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .context-item svg {
+      width: 16px;
+      height: 16px;
+      color: var(--text-secondary);
+    }
+
+    .context-item.danger {
+      color: #ff3b30;
+    }
+
+    .context-item.danger svg {
+      color: #ff3b30;
+    }
+
+    .context-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 8px;
+    }
+
+    /* Settings */
+    .settings {
+      padding: 12px 16px;
+      background: var(--bg-glass);
+      border-top: 1px solid var(--border);
+      display: none;
+    }
+
+    .settings.active {
+      display: block;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .setting-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .setting-slider {
+      width: 100px;
+      height: 4px;
+      -webkit-appearance: none;
+      background: var(--border-strong);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .setting-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: white;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+
+    /* Collapsed */
+    .widget.collapsed .main-container,
+    .widget.collapsed .settings {
+      display: none;
+    }
+
+    /* Resize handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 16px;
+      height: 16px;
+      cursor: nwse-resize;
+      -webkit-app-region: no-drag;
+    }
+  </style>
+</head>
+<body>
+  <div class="widget" id="widget">
+    <div class="title-bar">
+      <h1>Albert Desktop</h1>
+      <div class="title-controls">
+        <button class="title-btn" id="settingsBtn" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.204-.107-.397.165-.71.505-.78.929l-.15.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </button>
+        <button class="title-btn" id="collapseBtn" title="Collapse">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="main-container">
+      <div class="tabs-bar" id="tabsBar"></div>
+      
+      <div class="content" id="content">
+        <div class="drop-zone" id="dropZone">
+          <span>Drop files here</span>
+        </div>
+        <div class="shortcuts-grid" id="shortcutsGrid"></div>
+      </div>
+    </div>
+
+    <div class="settings" id="settings">
+      <div class="setting-row">
+        <span class="setting-label">Opacity</span>
+        <input type="range" class="setting-slider" id="opacitySlider" min="50" max="100" value="95">
+      </div>
+    </div>
+
+    <div class="resize-handle"></div>
+  </div>
+
+  <!-- Tab Modal -->
+  <div class="modal-overlay" id="tabModal">
+    <div class="modal">
+      <h2 id="tabModalTitle">New Tab</h2>
+      <input type="text" id="tabNameInput" placeholder="Tab name">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="tabModalCancel">Cancel</button>
+        <button class="btn btn-danger" id="tabModalDelete" style="display:none">Delete</button>
+        <button class="btn btn-primary" id="tabModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shortcut Modal -->
+  <div class="modal-overlay" id="shortcutModal">
+    <div class="modal">
+      <h2 id="shortcutModalTitle">Add Shortcut</h2>
+      <input type="text" id="shortcutNameInput" placeholder="Name">
+      <input type="text" id="shortcutPathInput" placeholder="Path or URL">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="shortcutModalCancel">Cancel</button>
+        <button class="btn btn-primary" id="shortcutModalSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menus -->
+  <div class="context-menu" id="shortcutContextMenu">
+    <div class="context-item" data-action="open">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/>
+      </svg>
+      Open
+    </div>
+    <div class="context-item" data-action="show-in-folder">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>
+      </svg>
+      Show in Folder
+    </div>
+    <div class="context-item" data-action="edit">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+      </svg>
+      Edit
+    </div>
+    <div class="context-divider"></div>
+    <div class="context-item danger" data-action="delete">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+      </svg>
+      Delete
+    </div>
+  </div>
+
+  <div class="context-menu" id="tabContextMenu">
+    <div class="context-item" data-action="rename">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/>
+      </svg>
+      Rename
+    </div>
+    <div class="context-divider"></div>
+    <div class="context-item danger" data-action="delete">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+      </svg>
+      Delete Tab
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
